@@ -112,10 +112,13 @@ def setup_moderation(bot):
 
     @bot.hybrid_command(name="purge")
     @commands.has_permissions(manage_messages=True)
-    async def purge(ctx, member: discord.Member):
-        def check(m): return m.author == member
-        deleted = await ctx.channel.purge(limit=1000, check=check)
-        await ctx.send(f"Deleted {len(deleted)} messages from {member.name}")
+    async def purge(ctx, amount: int):
+        """Purges messages in the channel."""
+        # Purge the specified number of messages (+1 to include the command message itself)
+        deleted_messages = await ctx.channel.purge(limit=amount + 1)
+        
+        # Send a confirmation message showing how many messages were deleted
+        confirmation_msg = await ctx.send(f"{len(deleted_messages) - 1} message(s) purged.", delete_after=5)
 
     @bot.hybrid_command(name="cleanbot")
     async def cleanbot(ctx):
@@ -185,6 +188,22 @@ def setup_moderation(bot):
     async def deleterole(ctx, role: discord.Role):
         await role.delete()
         await ctx.send(f"Deleted role {role.name}")
+
+    @bot.hybrid_command(name="addemoji")
+    @commands.has_permissions(manage_emojis=True)
+    async def addemoji(ctx, name: str, link: str):
+        """Adds a custom emoji to the server."""
+        try:
+            # Check if the URL is valid
+            emoji_image = await discord.utils.get_link_image(link)
+            
+            # Add the emoji to the server
+            emoji = await ctx.guild.create_custom_emoji(name=name, image=emoji_image)
+            
+            # Send a confirmation message
+            await ctx.send(f"Emoji {emoji.name} added successfully!")
+        except Exception as e:
+            await ctx.send(f"Error: {str(e)}")
 
     @bot.hybrid_command(name="editrole")
     async def editrole(ctx, role: discord.Role, new_name: str, color: str = None):
