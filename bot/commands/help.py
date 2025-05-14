@@ -1,11 +1,12 @@
-import discord
 from discord.ext import commands
+import discord
 from discord.ui import Select, View
 
-def setup_help(bot): bot.remove_command("help")
+def setup_help(bot):
+    bot.remove_command("help")
 
-@bot.command(name="help")
-async def help_command(ctx):
+    @bot.command(name="help")
+    async def help_command(ctx):
     embed = discord.Embed(
         title="🤖 **__Bot Help Panel__**",
         description=(
