@@ -1,4 +1,6 @@
-import discord from discord.ext import commands from discord.ui import Select, View
+import discord
+from discord.ext import commands
+from discord.ui import Select, View
 
 def setup_help(bot): bot.remove_command("help")
 
