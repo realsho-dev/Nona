@@ -2,96 +2,54 @@ import os
 from dotenv import load_dotenv
 from together import Together
 
-# Load environment variables
+# Load API Key
 load_dotenv()
+client = Together(api_key=os.getenv("TOGETHER_API_KEY"))
 
-# Setup Together API Key
-TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY")
-
-# Initialize Together API client
-client = Together(api_key=TOGETHER_API_KEY)
-
-# Function to get response from AI model
-def get_ai_response(prompt, context=None):
+# Get AI response using Together API
+def get_ai_response(prompt, context=""):
     try:
-        # Predefined information to guide the AI's response
-        predefined_info = """
-        You are a Discord bot named coco, created by Ayanokouji, You have to help server members by answering their queries in a short and simple way.
-        """
-        
-        # Combine predefined info with the user prompt and context (if any)
-        if context:
-            full_prompt = f"{predefined_info}\n\nContext (message you're replying to): {context}\n\nUser's question: {prompt}\n\nProvide a simple, clear response considering the context."
-        else:
-            full_prompt = f"{predefined_info}\n\nUser's message: {prompt}\n\nProvide a simple, clear response."
+        system_prompt = (
+            "You are a helpful Discord bot named coco, created by Ayanokouji. "
+            "Reply shortly and clearly using the recent chat context."
+        )
+        full_prompt = f"{system_prompt}\n\nRecent chat:\n{context}\n\nUser's message: {prompt}"
 
-        # Sending the prompt to the AI model and getting the response
         response = client.chat.completions.create(
             model="meta-llama/Llama-3-70b-chat-hf",
             messages=[{"role": "user", "content": full_prompt}]
         )
-        
-        if response and response.choices:
-            return response.choices[0].message.content.strip()
-        
-        return "Error: No response from AI."
+        return response.choices[0].message.content.strip()
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"Error: {e}"
 
-# Function to fetch last 50 messages from the channel and the user
-async def fetch_chat_context(channel, user, message_limit=50):
+# Get last 50 messages, but focus on last 5 from chat and user
+async def get_recent_context(channel, user, limit=50):
     try:
-        # Get the last 50 messages from the channel
-        channel_messages = await channel.history(limit=message_limit).flatten()
-        chat_history = [msg.content for msg in channel_messages]
-        
-        # Get the last 50 messages from the user
-        user_messages = [msg.content for msg in channel_messages if msg.author == user]
-        user_history = user_messages[-message_limit:]  # Only last 50 from the user
-        
-        # Combine chat history and user history
-        context = {
-            'chat': "\n".join(chat_history[-message_limit:]),  # Last 50 from the chat
-            'user': "\n".join(user_history[-message_limit:])   # Last 50 from the user
-        }
-        
-        return context
+        messages = await channel.history(limit=limit).flatten()
+        chat_msgs = [msg.content for msg in messages[:50]]
+        user_msgs = [msg.content for msg in messages if msg.author == user][:50]
+        return "\n".join(chat_msgs + user_msgs)
     except Exception as e:
-        print(f"Error fetching context: {e}")
-        return None
+        print(f"Context error: {e}")
+        return ""
 
-# Function to handle Discord message (this would be called from your Discord bot code)
-async def handle_discord_message(message, bot_command_prefix='-'):
-    # Ignore messages that start with bot's command prefix (like -help, -cmd, etc.)
-    if message.content.startswith(bot_command_prefix) and not message.content.startswith('-ask'):
+# Handle Discord messages
+async def handle_discord_message(message, prefix='-ask'):
+    if not (message.content.startswith(prefix) or (message.reference and prefix in message.content)):
         return
-        
-    # Check if message starts with -ask or is a reply to another message with -ask
-    if message.content.startswith('-ask') or (message.reference and '-ask' in message.content):
-        # Get the replied message if exists
-        context_message = None
-        if message.reference:
-            try:
-                # Fetch the replied message
-                replied_message = await message.channel.fetch_message(message.reference.message_id)
-                context_message = replied_message.content
-            except:
-                pass
-        
-        # Remove -ask from the prompt
-        user_prompt = message.content.replace('-ask', '').strip()
 
-        # Fetch last 50 messages from the channel and the user for context
-        context = await fetch_chat_context(message.channel, message.author)
-        
-        # Prepare the final context by adding the previous chat and user history to the prompt
-        if context:
-            full_context = f"Last 50 messages in the chat:\n{context['chat']}\n\nLast 50 messages from the user:\n{context['user']}\n\nUser's query: {user_prompt}"
-        else:
-            full_context = f"User's query: {user_prompt}"
+    user_input = message.content.replace(prefix, '').strip()
+    context_msg = ""
 
-        # Get AI response using the combined context
-        response = get_ai_response(user_prompt, full_context)
-        
-        # Send the response back to Discord
-        await message.channel.send(response)
+    if message.reference:
+        try:
+            ref = await message.channel.fetch_message(message.reference.message_id)
+            context_msg = ref.content
+        except:
+            pass
+
+    recent_context = await get_recent_context(message.channel, message.author)
+    full_context = f"{context_msg}\n{recent_context}".strip()
+    reply = get_ai_response(user_input, full_context)
+    await message.channel.send(reply)
