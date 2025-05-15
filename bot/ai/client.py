@@ -2,18 +2,18 @@ import os
 from dotenv import load_dotenv
 from together import Together
 
-# Load API Key
+# Load API key and initialize Together client
 load_dotenv()
 client = Together(api_key=os.getenv("TOGETHER_API_KEY"))
 
-# Get AI response using Together API
+# Get response from Together AI
 def get_ai_response(prompt, context=""):
     try:
         system_prompt = (
             "You are a helpful Discord bot named coco, created by Ayanokouji. "
-            "Reply shortly and clearly using the recent chat context."
+            "You answer shortly and clearly. Use recent messages and user info to personalize your response."
         )
-        full_prompt = f"{system_prompt}\n\nRecent chat:\n{context}\n\nUser's message: {prompt}"
+        full_prompt = f"{system_prompt}\n\nRecent context:\n{context}\n\nUser's message: {prompt}"
 
         response = client.chat.completions.create(
             model="meta-llama/Llama-3-70b-chat-hf",
@@ -23,13 +23,28 @@ def get_ai_response(prompt, context=""):
     except Exception as e:
         return f"Error: {e}"
 
-# Get last 50 messages, but focus on last 5 from chat and user
-async def get_recent_context(channel, user, limit=50):
+# Get recent messages and build context with usernames and user IDs
+async def build_context(channel, target_user, limit=50):
     try:
         messages = await channel.history(limit=limit).flatten()
-        chat_msgs = [msg.content for msg in messages[:50]]
-        user_msgs = [msg.content for msg in messages if msg.author == user][:50]
-        return "\n".join(chat_msgs + user_msgs)
+
+        # Extract last 5 from chat (with author info)
+        recent_chat = [
+            f"{msg.author.name} ({msg.author.id}): {msg.content}"
+            for msg in messages[:5]
+        ]
+
+        # Extract last 5 messages from the target user
+        user_msgs = [
+            f"{msg.author.name} ({msg.author.id}): {msg.content}"
+            for msg in messages if msg.author == target_user
+        ][:5]
+
+        # If user is active but never used bot, we still gather info
+        user_context = "\n".join(user_msgs)
+        chat_context = "\n".join(recent_chat)
+
+        return f"User info:\n{target_user.name} ({target_user.id})\n\nUser's past messages:\n{user_context}\n\nRecent chat:\n{chat_context}"
     except Exception as e:
         print(f"Context error: {e}")
         return ""
@@ -45,11 +60,12 @@ async def handle_discord_message(message, prefix='-ask'):
     if message.reference:
         try:
             ref = await message.channel.fetch_message(message.reference.message_id)
-            context_msg = ref.content
+            context_msg = f"Replied to: {ref.author.name} - {ref.content}"
         except:
             pass
 
-    recent_context = await get_recent_context(message.channel, message.author)
-    full_context = f"{context_msg}\n{recent_context}".strip()
+    user_context = await build_context(message.channel, message.author)
+    full_context = f"{context_msg}\n{user_context}".strip()
+
     reply = get_ai_response(user_input, full_context)
     await message.channel.send(reply)
